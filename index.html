@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MathShooter: 30 Mystery Box Adventure</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- MediaPipe Hands & Camera Utils -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700;800&family=Bungee&display=swap" rel="stylesheet" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><polygon points=%2232,4 58,16 32,28 6,16%22 fill=%22%23fbbf24%22 stroke=%22%2378350f%22 stroke-width=%223%22/><polygon points=%226,16 32,28 32,58 6,46%22 fill=%22%23d97706%22 stroke=%22%2378350f%22 stroke-width=%223%22/><polygon points=%2232,28 58,16 58,46 32,58%22 fill=%22%23b45309%22 stroke=%22%2378350f%22 stroke-width=%223%22/><polygon points=%2228,26 36,30 36,59 28,55%22 fill=%22%23fef08a%22 opacity=%220.9%22/></svg>">
+  <style>
+    body {
+      font-family: 'Fredoka', cursive, sans-serif;
+      user-select: none;
+      background-color: #6366f1;
+      background-image: radial-gradient(rgba(255, 255, 255, 0.22) 2.5px, transparent 2.5px);
+      background-size: 26px 26px;
+      cursor: default;
+      scroll-behavior: smooth;
+    }
+
+    /* Styling Box Kardus Kartun */
+    .box-item {
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .box-item:hover, .box-item.aimed {
+      transform: translateY(-8px) scale(1.06);
+    }
+
+    .box-lid {
+      transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+      transform-origin: bottom center;
+    }
+
+    /* Efek Saat Kardus Terbuka (Unboxed) */
+    .box-item.opened .box-lid {
+      transform: translateY(-30px) rotate(-18deg) scale(0.95);
+      opacity: 0.9;
+    }
+    .box-item.opened .box-sparkles {
+      opacity: 1;
+      transform: translateY(-20px) scale(1.2);
+    }
+    .box-item.opened {
+      filter: grayscale(0.5) opacity(0.65);
+      transform: scale(0.92);
+      pointer-events: none;
+    }
+
+    /* Animasi Lompat Saat Ditembak */
+    @keyframes boxJump {
+      0%, 100% { transform: scale(1) translateY(0); }
+      30% { transform: scale(1.15, 0.85) translateY(4px); }
+      50% { transform: scale(0.9, 1.15) translateY(-14px); }
+      70% { transform: scale(1.05, 0.95) translateY(-4px); }
+    }
+    .jumping {
+      animation: boxJump 0.35s ease-in-out;
+    }
+
+    #crosshair {
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      transition: transform 0.04s linear;
+    }
+    #crosshair.pinched {
+      transform: translate(-50%, -50%) scale(0.72);
+      border-color: #ef4444;
+      background-color: rgba(239, 68, 68, 0.35);
+    }
+
+    @keyframes shakeWrong {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+    .animate-shake {
+      animation: shakeWrong 0.35s ease-in-out;
+    }
+
+    /* Bantal Kentut Zonk Lucu */
+    @keyframes squishWhoopee {
+      0%, 100% { transform: scale(1, 1); }
+      30% { transform: scale(1.25, 0.75); }
+      50% { transform: scale(0.85, 1.15); }
+      70% { transform: scale(1.08, 0.92); }
+    }
+    .animate-squish {
+      animation: squishWhoopee 1.2s ease-in-out infinite;
+      transform-origin: bottom center;
+    }
+
+    @keyframes smokeDrift {
+      0% { transform: translate(0, 0) scale(0.8); opacity: 0; }
+      40% { opacity: 0.9; }
+      100% { transform: translate(15px, -20px) scale(1.2); opacity: 0; }
+    }
+    .smoke-puff-1 { animation: smokeDrift 1.5s ease-out infinite; }
+    .smoke-puff-2 { animation: smokeDrift 1.5s ease-out infinite 0.5s; }
+
+    /* Card Mini Panduan di Footer */
+    .footer-guide-card {
+      transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .footer-guide-card:hover {
+      transform: translateY(-4px);
+    }
+  </style>
+</head>
+<body class="min-h-screen text-slate-800 flex flex-col items-center justify-between p-3 sm:p-5 relative pb-36">
+
+  <!-- Reticle AI Hand Pointer (Bidikan Kamera & Cubit = Klik) -->
+  <div id="crosshair" class="fixed z-[100] w-14 h-14 border-4 border-yellow-300 rounded-full flex items-center justify-center shadow-2xl backdrop-blur-[1px]">
+    <div class="w-3.5 h-3.5 bg-red-500 rounded-full animate-ping"></div>
+  </div>
+
+  <!-- Indikator Visual Edge Scroll Layar -->
+  <div id="scrollTopIndicator" class="fixed top-2 z-[95] left-1/2 -translate-x-1/2 bg-yellow-400 text-indigo-950 font-black text-xs px-4 py-1.5 rounded-full shadow-lg border-2 border-white flex items-center gap-1.5 opacity-0 transition-opacity pointer-events-none">
+    <span>⬆️</span> Menggulung ke Atas...
+  </div>
+  <div id="scrollBottomIndicator" class="fixed bottom-2 z-[95] left-1/2 -translate-x-1/2 bg-yellow-400 text-indigo-950 font-black text-xs px-4 py-1.5 rounded-full shadow-lg border-2 border-white flex items-center gap-1.5 opacity-0 transition-opacity pointer-events-none">
+    <span>⬇️</span> Menggulung ke Bawah...
+  </div>
+
+  <!-- Header Banner -->
+  <header class="w-full max-w-6xl bg-white rounded-3xl p-3 sm:p-4 shadow-xl border-4 border-white flex flex-wrap items-center justify-between gap-3 sticky top-3 z-30">
+    <div class="flex items-center gap-3">
+      <div class="w-12 h-12 bg-amber-400 rounded-2xl flex items-center justify-center text-2xl shadow-md border-2 border-amber-300">
+        📦
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-xl sm:text-2xl font-black text-indigo-700 tracking-wide">MathShooter</h1>
+          <span class="bg-pink-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow">Unboxing Paket Kamu</span>
+        </div>
+        <p class="text-xs text-indigo-900/70 font-semibold">Tembak & Buka Paket Kardus Rahasia Tanpa Sentuh Layar</p>
+      </div>
+    </div>
+
+    <!-- Status Bar Kanan -->
+    <div class="flex items-center gap-2.5">
+      <div class="flex items-center gap-2 bg-amber-50 border-2 border-amber-200 px-3.5 py-1.5 rounded-2xl shadow-sm">
+        <span class="text-xl">⭐</span>
+        <div class="text-left">
+          <span class="text-[9px] uppercase font-bold text-amber-600 block leading-none">Bintang</span>
+          <span id="scoreVal" class="text-lg font-black text-amber-700 leading-none">0</span>
+        </div>
+      </div>
+
+      <!-- Combo Streak Badge -->
+      <div id="comboBadge" class="hidden items-center gap-1 bg-orange-100 border-2 border-orange-300 px-2.5 py-1.5 rounded-2xl text-xs font-black text-orange-600 animate-pulse">
+        🔥 <span id="comboVal">x1</span> Combo!
+      </div>
+
+      <div class="flex items-center gap-1.5 bg-rose-50 border-2 border-rose-200 px-3 py-1.5 rounded-2xl shadow-sm text-xs font-black text-rose-600">
+        ❤️ <span>x3</span>
+      </div>
+
+      <button onclick="openGuideModal()" class="interactive-btn px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-xs shadow transition active:scale-95">
+        Panduan Jari 🖐️
+      </button>
+    </div>
+  </header>
+
+  <!-- Papan Petunjuk Robot Prof. Robi -->
+  <div class="w-full max-w-6xl mt-3 bg-white/95 rounded-2xl px-4 py-2.5 border-2 border-indigo-100 shadow-md flex items-center justify-between gap-3">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-purple-100 flex items-center justify-center text-xl">🤖</div>
+      <div>
+        <span class="text-[10px] font-black text-purple-600 uppercase tracking-wider block">Prof. Robi Kurir Bilangan</span>
+        <p id="robotDialogue" class="text-xs sm:text-sm font-bold text-indigo-900">
+          "Arahkan telunjuk ke tepi atas/bawah layar untuk scroll. Tembak kardus dengan <span class="text-pink-600 font-black">Cubit Jari</span>!"
+        </p>
+      </div>
+    </div>
+    <span id="gameModeBadge" class="hidden sm:inline-block bg-amber-100 text-amber-800 text-xs font-black px-3 py-1 rounded-xl border border-amber-300">
+        Unboxing Paket Yuk
+    </span>
+  </div>
+
+  <!-- Area 30 Paket Kardus Misterius (Grid Responsif) -->
+  <main class="w-full max-w-6xl my-6 flex-1 flex flex-col justify-center">
+    <div class="text-center mb-4">
+      <h2 class="text-2xl sm:text-3xl font-black text-white drop-shadow">Pilih & Buka 30 Kardus Misterius! 📦</h2>
+      <p class="text-xs sm:text-sm text-indigo-100 font-semibold drop-shadow">
+        Berisi operasi <span class="bg-amber-400 text-slate-900 px-1.5 py-0.2 rounded font-black">+ Tambah</span>, 
+        <span class="bg-rose-400 text-white px-1.5 py-0.2 rounded font-black">- Kurang</span>, 
+        <span class="bg-emerald-400 text-slate-900 px-1.5 py-0.2 rounded font-black">× Kali</span>, 
+        <span class="bg-cyan-400 text-slate-900 px-1.5 py-0.2 rounded font-black">÷ Bagi</span>, dan ZONK Kentut!
+      </p>
+    </div>
+
+    <!-- Grid 30 Kardus -->
+    <div id="boxGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3.5 sm:gap-5 justify-items-center"></div>
+  </main>
+
+  <!-- ======================================================== -->
+  <!-- FOOTER DESAIN BARU: LEGA, INTERAKTIF & PLAYFUL GAMING HUB -->
+  <!-- ======================================================== -->
+  <footer class="w-full max-w-6xl mt-8 mb-4 bg-white/95 backdrop-blur-md rounded-3xl p-5 sm:p-7 shadow-2xl border-4 border-white flex flex-col gap-5 z-20 xl:pr-52">
+    
+    <!-- Bagian Atas Footer: Info Game & Tombol Reset Cepat -->
+    <div class="flex flex-col sm:flex-row items-center justify-between gap-4 border-b-2 border-indigo-100 pb-5">
+      <div class="flex items-center gap-3.5 text-center sm:text-left">
+        <div class="w-14 h-14 bg-gradient-to-tr from-amber-400 to-yellow-300 border-4 border-amber-200 rounded-3xl flex items-center justify-center text-3xl shadow-md">
+          🎯
+        </div>
+        <div>
+          <div class="flex items-center justify-center sm:justify-start gap-2">
+            <h4 class="text-lg font-black text-indigo-900">MathShooter Playground</h4>
+            <span class="bg-indigo-100 text-indigo-700 text-[10px] font-black px-2 py-0.5 rounded-lg border border-indigo-200">v2.5 AI Touchless</span>
+          </div>
+          <p class="text-xs text-indigo-700/80 font-bold mt-0.5">
+            Media Belajar Matematika Kinetik Berbasis Computer Vision & Gamifikasi Interaktif
+          </p>
+        </div>
+      </div>
+
+      <!-- Tombol Aksi Cepat (Mulai Ulang / Reset Box) -->
+      <button onclick="resetGameBoxes()" class="interactive-btn px-4 py-2.5 bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-500 hover:to-orange-500 text-slate-950 rounded-2xl font-black text-xs shadow-md border-2 border-amber-200 flex items-center gap-2 transition active:scale-95">
+        <span>🔄</span> Acak & Reset 30 Kardus
+      </button>
+    </div>
+
+    <!-- Bagian Tengah: 3 Kartu Panduan Interaktif yang Lega & Jelas -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      
+      <!-- Kartu 1: Cara Menembak -->
+      <div class="footer-guide-card bg-amber-50/90 border-2 border-amber-200 rounded-2xl p-3 flex items-center gap-3 shadow-sm">
+        <div class="w-10 h-10 bg-amber-400 text-white rounded-xl flex items-center justify-center text-xl font-black shadow-inner">
+          👌
+        </div>
+        <div class="text-left">
+          <span class="text-[10px] font-black uppercase text-amber-700 tracking-wider block">Langkah 1: Menembak</span>
+          <p class="text-xs font-bold text-amber-950">Arahkan & Cubit Jempol-Telunjuk</p>
+        </div>
+      </div>
+
+      <!-- Kartu 2: Cara Jawab Soal -->
+      <div class="footer-guide-card bg-pink-50/90 border-2 border-pink-200 rounded-2xl p-3 flex items-center gap-3 shadow-sm">
+        <div class="w-10 h-10 bg-pink-500 text-white rounded-xl flex items-center justify-center text-xl font-black shadow-inner">
+          ⏱️
+        </div>
+        <div class="text-left">
+          <span class="text-[10px] font-black uppercase text-pink-700 tracking-wider block">Langkah 2: Menjawab</span>
+          <p class="text-xs font-bold text-pink-950">Tahan Gestur Jari selama 1 Detik</p>
+        </div>
+      </div>
+
+      <!-- Kartu 3: Cara Scroll -->
+      <div class="footer-guide-card bg-sky-50/90 border-2 border-sky-200 rounded-2xl p-3 flex items-center gap-3 shadow-sm">
+        <div class="w-10 h-10 bg-sky-400 text-white rounded-xl flex items-center justify-center text-xl font-black shadow-inner">
+          ↕️
+        </div>
+        <div class="text-left">
+          <span class="text-[10px] font-black uppercase text-sky-700 tracking-wider block">Langkah 3: Menjelajah</span>
+          <p class="text-xs font-bold text-sky-950">Bidikan ke Tepi Atas / Bawah</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Bagian Bawah: Hak Cipta & Status Sistem -->
+    <div class="flex flex-col sm:flex-row items-center justify-between gap-2 text-xs font-bold text-indigo-900/60 pt-2 border-t border-indigo-50">
+      <div class="flex items-center gap-2">
+        <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+        <span>Sistem Kamera: <b class="text-indigo-900">MediaPipe Hand Landmarker 2 Tangan Aktif</b></span>
+      </div>
+      <div>
+        <span>Dibuat dengan ❤️ untuk Media Belajar Siswa Aktif & Kreatif</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Feed Kamera Webcam AI (Selalu Muncul di Pojok Kanan Bawah z-[90]) -->
+  <div id="camContainer" class="fixed bottom-3 right-3 sm:bottom-4 sm:right-4 z-[90] bg-white p-2.5 rounded-3xl border-4 border-indigo-400 shadow-2xl flex flex-col items-center gap-1.5">
+    <div class="flex items-center justify-between w-full px-1">
+      <span class="flex items-center gap-1.5 text-[10px] font-black text-indigo-900">
+        <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span> KAMERA GESTUR
+      </span>
+      <span class="text-[9px] bg-green-100 text-green-700 font-bold px-1.5 py-0.5 rounded-md">Aktif</span>
+    </div>
+
+    <div class="relative w-44 h-32 bg-slate-900 rounded-2xl overflow-hidden border-2 border-indigo-100">
+      <video id="webcam" class="w-full h-full object-cover -scale-x-100" playsinline muted></video>
+      <div id="gestureStatus" class="absolute bottom-1 left-1 right-1 bg-indigo-950/85 text-[10px] text-center text-yellow-300 py-1 px-1 rounded-xl font-bold">
+        Memuat AI Gestur...
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between w-full px-1 text-[11px] font-black">
+      <span class="text-indigo-800">🖐️ Total Jari: <span id="detectedFingersCount" class="text-pink-600 text-sm font-black">0</span></span>
+      <span id="handsDetectedBadge" class="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">0 Tangan</span>
+    </div>
+  </div>
+
+  <!-- Modal Tantangan Matematika (Diam Stabil & Feedback Warna) -->
+  <div id="mathModal" class="fixed inset-0 z-[85] bg-indigo-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 text-center shadow-2xl border-4 border-yellow-400 relative">
+      <div class="flex items-center justify-between mb-2">
+        <span id="questionCategoryTag" class="px-3 py-1 bg-yellow-100 border-2 border-yellow-300 text-yellow-800 text-xs font-black rounded-full">
+          📦 OPERASI PENJUMLAHAN
+        </span>
+        <button onclick="speakCurrentQuestion()" class="interactive-btn px-2.5 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-xl text-xs font-black flex items-center gap-1 shadow-sm">
+          🔊 Ulangi Suara
+        </button>
+      </div>
+
+      <h3 class="text-lg font-bold text-slate-600">Berapa hasil perhitungan ini?</h3>
+
+      <!-- Rumus Soal -->
+      <div class="flex items-center justify-center gap-3 my-4">
+        <span id="mathQuestion" class="text-4xl sm:text-5xl font-black text-indigo-800">10 + 3</span>
+        <span class="text-4xl sm:text-5xl font-black text-indigo-400">=</span>
+        
+        <!-- Slot Input Digit -->
+        <div class="flex items-center gap-2">
+          <!-- Puluhan -->
+          <div id="tensBox" class="w-14 h-16 bg-yellow-50 border-4 border-yellow-400 rounded-2xl flex items-center justify-center text-3xl font-black text-yellow-600 animate-pulse shadow-inner hidden transition-all">
+            ?
+          </div>
+          <!-- Satuan -->
+          <div id="onesBox" class="w-14 h-16 bg-slate-100 border-4 border-slate-300 rounded-2xl flex items-center justify-center text-3xl font-black text-slate-400 shadow-inner transition-all">
+            ?
+          </div>
+        </div>
+      </div>
+
+      <!-- Kotak Indikator Progres Tahan Gestur -->
+      <div class="bg-indigo-50 border-2 border-indigo-200 rounded-2xl p-3 mb-4">
+        <div class="flex items-center justify-between text-xs font-black text-indigo-900 mb-1">
+          <span id="digitTargetInstruction">👉 Langkah 1: Tunjukkan digit PULUHAN!</span>
+          <span id="holdTimerBadge" class="text-pink-600 font-extrabold">Tahan Jari: 0%</span>
+        </div>
+        <div class="w-full bg-indigo-200 h-3.5 rounded-full overflow-hidden">
+          <div id="holdProgressBar" class="bg-gradient-to-r from-pink-500 to-rose-500 h-full w-0 transition-all duration-75"></div>
+        </div>
+        <p class="text-[11px] text-slate-500 font-semibold mt-1.5">
+          Tunjukkan jarimu & <span class="text-indigo-700 font-black">tahan 1 detik</span>! (Dua tangan didukung: 5 + 3 = 8 jari)
+        </p>
+      </div>
+
+      <!-- Tombol Angka Fallback -->
+      <div class="grid grid-cols-5 gap-2 max-w-sm mx-auto mb-2">
+        <button onclick="handleDirectInput(1)" class="interactive-btn bg-indigo-100 hover:bg-yellow-400 text-indigo-900 font-black py-2 rounded-xl text-lg transition active:scale-95">1</button>
+        <button onclick="handleDirectInput(2)" class="interactive-btn bg-indigo-100 hover:bg-yellow-400 text-indigo-900 font-black py-2 rounded-xl text-lg transition active:scale-95">2</button>
+        <button onclick="handleDirectInput(3)" class="interactive-btn bg-indigo-100 hover:bg-yellow-400 text-indigo-900 font-black py-2 rounded-xl text-lg transition active:scale-95">3</button>
+        <button onclick="handleDirectInput(4)" class="interactive-btn bg-indigo-100 hover:bg-yellow-400 text-indigo-900 font-black py-2 rounded-xl text-lg transition active:scale-95">4</button>
+        <button onclick="handleDirectInput(5)" class="interactive-btn bg-indigo-100 hover:bg-yellow-400 text-indigo-900 font-black py-2 rounded-xl text-lg transition active:scale-95">5</button>
+        <button onclick="handleDirectInput(6)" class="interactive-btn bg-indigo-100 hover:bg-yellow-400 text-indigo-900 font-black py-2 rounded-xl text-lg transition active:scale-95">6</button>
+        <button onclick="handleDirectInput(7)" class="interactive-btn bg-indigo-100 hover:bg-yellow-400 text-indigo-900 font-black py-2 rounded-xl text-lg transition active:scale-95">7</button>
+        <button onclick="handleDirectInput(8)" class="interactive-btn bg-indigo-100 hover:bg-yellow-400 text-indigo-900 font-black py-2 rounded-xl text-lg transition active:scale-95">8</button>
+        <button onclick="handleDirectInput(9)" class="interactive-btn bg-indigo-100 hover:bg-yellow-400 text-indigo-900 font-black py-2 rounded-xl text-lg transition active:scale-95">9</button>
+        <button onclick="handleDirectInput(0)" class="interactive-btn bg-indigo-100 hover:bg-yellow-400 text-indigo-900 font-black py-2 rounded-xl text-lg transition active:scale-95">0</button>
+      </div>
+
+      <div id="feedbackText" class="text-xs font-black h-4 text-pink-600"></div>
+    </div>
+  </div>
+
+  <!-- Modal Zonk (Tenang Tanpa Goyang) -->
+  <div id="zonkModal" class="fixed inset-0 z-[85] bg-indigo-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl border-4 border-pink-400 relative">
+      <div class="relative w-32 h-28 mx-auto flex items-center justify-center my-1">
+        <svg viewBox="0 0 100 100" class="smoke-puff-1 absolute -right-3 -top-2 w-16 h-16 pointer-events-none opacity-80">
+          <circle cx="50" cy="50" r="18" fill="#bef264" />
+          <circle cx="35" cy="40" r="14" fill="#a3e635" />
+          <circle cx="65" cy="45" r="15" fill="#d9f99d" />
+        </svg>
+        <svg viewBox="0 0 100 100" class="smoke-puff-2 absolute -right-6 top-6 w-12 h-12 pointer-events-none opacity-80">
+          <circle cx="50" cy="50" r="14" fill="#a3e635" />
+          <circle cx="65" cy="55" r="12" fill="#bef264" />
+        </svg>
+
+        <div class="animate-squish relative z-10 w-24 h-20 bg-gradient-to-b from-pink-400 to-rose-500 rounded-[50px/40px] border-4 border-rose-600 shadow-md flex flex-col items-center justify-center">
+          <div class="absolute -left-3.5 top-1/2 -translate-y-1/2 w-4 h-5 bg-rose-500 border-2 border-rose-700 rounded-l-md"></div>
+          <div class="flex items-center gap-3 mb-1">
+            <span class="text-xs font-black text-rose-950 font-mono">><</span>
+            <div class="w-2.5 h-2.5 bg-rose-950 rounded-full"></div>
+          </div>
+          <div class="relative w-4 h-2 border-b-2 border-rose-950 rounded-full flex justify-center">
+            <div class="w-2 h-2 bg-red-400 rounded-b-full border border-rose-700 -bottom-1 absolute"></div>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="text-2xl font-black text-pink-600 mb-1 tracking-wide">YAAAH ZONK! 💨</h3>
+      <p class="text-xs font-bold text-slate-600 mb-5 leading-relaxed">
+        Ppprrfttt! Kardus ini cuma isi <span class="text-pink-600 font-black">kentut balon usil</span>! Buka kardus lainnya yang ada soal hadiahnya yuk!
+      </p>
+
+      <button onclick="closeZonk()" class="interactive-btn w-full py-3.5 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 font-black text-white text-sm rounded-2xl shadow-lg shadow-pink-500/30 transition transform active:scale-95 border-2 border-pink-300">
+        Buka Kardus Lain! 🚀
+      </button>
+    </div>
+  </div>
+
+  <!-- Modal Panduan Gestur Jari (FULL GAMBAR panduan-jari.jpg) -->
+  <div id="guideModal" class="fixed inset-0 z-[95] bg-indigo-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-3xl max-w-2xl w-full p-5 text-center shadow-2xl border-4 border-indigo-400 relative">
+      <button onclick="closeGuideModal()" class="interactive-btn absolute top-3 right-3 w-9 h-9 bg-rose-100 hover:bg-rose-500 hover:text-white text-rose-600 rounded-full font-black text-base flex items-center justify-center transition">
+        ✕
+      </button>
+
+      <h3 class="text-xl font-black text-indigo-800 mb-3 flex items-center justify-center gap-2">
+        🖐️ Panduan Gestur Jari (1 - 10)
+      </h3>
+
+      <div class="bg-white rounded-2xl p-2 border-2 border-indigo-100 shadow-inner overflow-hidden mb-4">
+        <img 
+          src="panduan-jari.jpg" 
+          alt="Panduan Gestur Jari 1 sampai 10" 
+          class="w-full h-auto object-contain rounded-xl"
+          onerror="this.onerror=null; this.src='https://placehold.co/800x400/png?text=Simpan+gambar+sebagai+panduan-jari.png';"
+        />
+      </div>
+
+      <button onclick="closeGuideModal()" class="interactive-btn w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 font-black text-white text-sm rounded-2xl shadow-lg transition active:scale-95">
+        Saya Paham! Ayo Main 🚀
+      </button>
+    </div>
+  </div>
+
+  <!-- JAVASCRIPT GAME ENGINE -->
+  <script>
+    // --- Audio Synthesizer (Web Audio API) ---
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playSfx(type) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      const now = audioCtx.currentTime;
+
+      if (type === 'unboxing') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(260, now);
+        osc.frequency.exponentialRampToValueAtTime(750, now + 0.18);
+        gain.gain.setValueAtTime(0.35, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.22);
+        osc.start(now);
+        osc.stop(now + 0.22);
+      } else if (type === 'correct') {
+        osc.frequency.setValueAtTime(523.25, now);
+        osc.frequency.setValueAtTime(659.25, now + 0.08);
+        osc.frequency.setValueAtTime(783.99, now + 0.16);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.35);
+        osc.start(now);
+        osc.stop(now + 0.35);
+      } else if (type === 'wrong') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(180, now);
+        osc.frequency.setValueAtTime(140, now + 0.15);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.28);
+        osc.start(now);
+        osc.stop(now + 0.28);
+      } else if (type === 'zonk') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(160, now);
+        osc.frequency.linearRampToValueAtTime(90, now + 0.1);
+        osc.frequency.linearRampToValueAtTime(130, now + 0.2);
+        osc.frequency.linearRampToValueAtTime(50, now + 0.4);
+        gain.gain.setValueAtTime(0.35, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.4);
+        osc.start(now);
+        osc.stop(now + 0.4);
+      }
+    }
+
+    // --- Text-to-Speech (Suara Pembaca Soal Otomatis) ---
+    function speakCurrentQuestion() {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const text = document.getElementById('mathQuestion').innerText
+          .replace('+', 'ditambah')
+          .replace('-', 'dikurang')
+          .replace('×', 'dikali')
+          .replace('÷', 'dibagi');
+        
+        const utterance = new SpeechSynthesisUtterance(`${text}, sama dengan berapa ya?`);
+        utterance.lang = 'id-ID';
+        utterance.rate = 0.95;
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+
+    // --- State Game ---
+    let score = 0;
+    let combo = 0;
+    let boxes = [];
+    let isMathModalOpen = false;
+    let currentBoxItem = null;
+    let targetAnswer = 0;
+    let targetTens = null;
+    let targetOnes = 0;
+    let inputStage = 'ones';
+
+    const cartonThemes = [
+      { top: "#eab308", side: "#ca8a04", front: "#d97706", tape: "#fef08a", border: "#78350f" },
+      { top: "#fbbf24", side: "#d97706", front: "#b45309", tape: "#fef3c7", border: "#78350f" },
+      { top: "#f59e0b", side: "#b45309", front: "#92400e", tape: "#fed7aa", border: "#451a03" },
+      { top: "#38bdf8", side: "#0284c7", front: "#0369a1", tape: "#e0f2fe", border: "#075985" },
+      { top: "#34d399", side: "#059669", front: "#047857", tape: "#d1fae5", border: "#065f46" }
+    ];
+
+    // Bank Soal 30 Kardus Misterius (+ - × ÷ ZONK)
+    function initBoxes() {
+      const grid = document.getElementById('boxGrid');
+      grid.innerHTML = '';
+      boxes = [];
+
+      const fullBank = [
+        // Penjumlahan (+)
+        { type: 'math', cat: 'Penjumlahan', q: '4 + 4', a: 8 },
+        { type: 'math', cat: 'Penjumlahan', q: '7 + 5', a: 12 },
+        { type: 'math', cat: 'Penjumlahan', q: '10 + 3', a: 13 },
+        { type: 'math', cat: 'Penjumlahan', q: '5 + 3', a: 8 },
+        { type: 'math', cat: 'Penjumlahan', q: '8 + 6', a: 14 },
+        { type: 'math', cat: 'Penjumlahan', q: '9 + 6', a: 15 },
+        { type: 'math', cat: 'Penjumlahan', q: '6 + 5', a: 11 },
+        { type: 'math', cat: 'Penjumlahan', q: '2 + 7', a: 9 },
+
+        // Pengurangan (-)
+        { type: 'math', cat: 'Pengurangan', q: '9 - 4', a: 5 },
+        { type: 'math', cat: 'Pengurangan', q: '15 - 8', a: 7 },
+        { type: 'math', cat: 'Pengurangan', q: '12 - 5', a: 7 },
+        { type: 'math', cat: 'Pengurangan', q: '14 - 6', a: 8 },
+        { type: 'math', cat: 'Pengurangan', q: '18 - 9', a: 9 },
+        { type: 'math', cat: 'Pengurangan', q: '20 - 7', a: 13 },
+        { type: 'math', cat: 'Pengurangan', q: '16 - 4', a: 12 },
+
+        // Perkalian (×)
+        { type: 'math', cat: 'Perkalian', q: '2 × 3', a: 6 },
+        { type: 'math', cat: 'Perkalian', q: '4 × 2', a: 8 },
+        { type: 'math', cat: 'Perkalian', q: '3 × 4', a: 12 },
+        { type: 'math', cat: 'Perkalian', q: '2 × 7', a: 14 },
+        { type: 'math', cat: 'Perkalian', q: '5 × 3', a: 15 },
+        { type: 'math', cat: 'Perkalian', q: '3 × 3', a: 9 },
+
+        // Pembagian (÷)
+        { type: 'math', cat: 'Pembagian', q: '8 ÷ 2', a: 4 },
+        { type: 'math', cat: 'Pembagian', q: '15 ÷ 3', a: 5 },
+        { type: 'math', cat: 'Pembagian', q: '12 ÷ 2', a: 6 },
+        { type: 'math', cat: 'Pembagian', q: '18 ÷ 2', a: 9 },
+
+        // ZONK Kocak
+        { type: 'zonk' },
+        { type: 'zonk' },
+        { type: 'zonk' },
+        { type: 'zonk' },
+        { type: 'zonk' },
+      ].sort(() => Math.random() - 0.5);
+
+      fullBank.forEach((item, idx) => {
+        boxes.push({ ...item, opened: false, id: idx });
+        const theme = cartonThemes[idx % cartonThemes.length];
+
+        const card = document.createElement('div');
+        card.id = `box-item-${idx}`;
+        card.className = "box-item interactive-btn cursor-pointer flex flex-col items-center justify-center p-1 relative w-32 sm:w-36";
+
+        card.innerHTML = `
+          <div class="box-sparkles absolute -top-4 text-2xl font-black transition-all duration-300 opacity-0 pointer-events-none z-30 drop-shadow">
+            ${item.type === 'zonk' ? '💨' : '✨ ❓ ✨'}
+          </div>
+
+          <div class="relative w-28 h-28 flex flex-col items-center justify-center">
+            <div class="box-lid absolute top-1 z-20 w-24 h-10">
+              <svg viewBox="0 0 100 45" class="w-full h-full drop-shadow-md">
+                <polygon points="50,2 96,18 50,34 4,18" fill="${theme.top}" stroke="${theme.border}" stroke-width="4" stroke-linejoin="round" />
+                <polygon points="50,2 62,6 50,34 38,30" fill="${theme.tape}" opacity="0.9" />
+                <polygon points="4,18 50,34 50,42 4,26" fill="${theme.side}" stroke="${theme.border}" stroke-width="4" stroke-linejoin="round" />
+                <polygon points="50,34 96,18 96,26 50,42" fill="${theme.front}" stroke="${theme.border}" stroke-width="4" stroke-linejoin="round" />
+              </svg>
+            </div>
+
+            <div class="absolute bottom-2 z-10 w-24 h-18">
+              <svg viewBox="0 0 100 70" class="w-full h-full drop-shadow-xl">
+                <polygon points="4,2 50,18 50,68 4,52" fill="${theme.side}" stroke="${theme.border}" stroke-width="4" stroke-linejoin="round" />
+                <polygon points="50,18 96,2 96,52 50,68" fill="${theme.front}" stroke="${theme.border}" stroke-width="4" stroke-linejoin="round" />
+                <polygon points="44,16 56,18 56,69 44,67" fill="${theme.tape}" opacity="0.9" />
+                <rect x="12" y="24" width="22" height="14" rx="2" fill="#ffffff" stroke="${theme.border}" stroke-width="2" transform="skewY(19)" opacity="0.95" />
+                <line x1="16" y1="28" x2="28" y2="28" stroke="#333" stroke-width="2" transform="skewY(19)"/>
+                <line x1="16" y1="32" x2="24" y2="32" stroke="#333" stroke-width="1.5" transform="skewY(19)"/>
+              </svg>
+            </div>
+          </div>
+
+          <div class="mt-1 bg-white px-3 py-0.5 rounded-full border-2 border-amber-400 shadow-md flex items-center gap-1 z-20">
+            <span class="text-[11px] font-black text-amber-600">#${idx + 1}</span>
+            <span class="text-[9px] font-extrabold text-indigo-900 uppercase">PAKET ${String.fromCharCode(65 + (idx % 26))}</span>
+          </div>
+        `;
+
+        card.onclick = () => selectBox(idx);
+        grid.appendChild(card);
+      });
+    }
+
+    function resetGameBoxes() {
+      initBoxes();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      document.getElementById('robotDialogue').innerHTML = `"30 Kardus telah diacak ulang! Pilih kardus mana yang mau dibuka duluan!"`;
+      playSfx('correct');
+    }
+
+    function selectBox(idx) {
+      const box = boxes[idx];
+      if (box.opened) return;
+
+      const boxElem = document.getElementById(`box-item-${idx}`);
+      currentBoxItem = box;
+
+      boxElem.classList.add('jumping');
+      playSfx('unboxing');
+
+      setTimeout(() => {
+        boxElem.classList.remove('jumping');
+        boxElem.classList.add('opened');
+        box.opened = true;
+
+        setTimeout(() => {
+          if (box.type === 'zonk') {
+            combo = 0;
+            updateComboUI();
+            playSfx('zonk');
+            document.getElementById('zonkModal').classList.remove('hidden');
+          } else {
+            openMathChallenge(box);
+          }
+        }, 380);
+      }, 250);
+    }
+
+    function closeZonk() {
+      document.getElementById('zonkModal').classList.add('hidden');
+    }
+
+    function openGuideModal() {
+      document.getElementById('guideModal').classList.remove('hidden');
+    }
+    function closeGuideModal() {
+      document.getElementById('guideModal').classList.add('hidden');
+    }
+
+    function updateComboUI() {
+      const comboBadge = document.getElementById('comboBadge');
+      const comboVal = document.getElementById('comboVal');
+      if (combo > 1) {
+        comboBadge.classList.remove('hidden');
+        comboBadge.classList.add('flex');
+        comboVal.innerText = `x${combo}`;
+      } else {
+        comboBadge.classList.add('hidden');
+        comboBadge.classList.remove('flex');
+      }
+    }
+
+    function openMathChallenge(box) {
+      isMathModalOpen = true;
+      targetAnswer = box.a;
+      document.getElementById('mathQuestion').innerText = box.q;
+      document.getElementById('questionCategoryTag').innerText = `📦 OPERASI ${box.cat.toUpperCase()}`;
+      document.getElementById('feedbackText').innerText = '';
+
+      if (targetAnswer >= 10) {
+        targetTens = Math.floor(targetAnswer / 10);
+        targetOnes = targetAnswer % 10;
+        inputStage = 'tens';
+        
+        const tensBox = document.getElementById('tensBox');
+        tensBox.classList.remove('hidden');
+        tensBox.innerText = '?';
+        tensBox.className = "w-14 h-16 bg-yellow-50 border-4 border-yellow-400 rounded-2xl flex items-center justify-center text-3xl font-black text-yellow-600 animate-pulse shadow-md";
+
+        const onesBox = document.getElementById('onesBox');
+        onesBox.innerText = '-';
+        onesBox.className = "w-14 h-16 bg-slate-100 border-4 border-slate-300 rounded-2xl flex items-center justify-center text-3xl font-black text-slate-400";
+        document.getElementById('digitTargetInstruction').innerText = "👉 Langkah 1: Tunjukkan digit PULUHAN!";
+      } else {
+        targetTens = null;
+        targetOnes = targetAnswer;
+        inputStage = 'ones';
+        
+        document.getElementById('tensBox').classList.add('hidden');
+        const onesBox = document.getElementById('onesBox');
+        onesBox.innerText = '?';
+        onesBox.className = "w-14 h-16 bg-yellow-50 border-4 border-yellow-400 rounded-2xl flex items-center justify-center text-3xl font-black text-yellow-600 animate-pulse shadow-md";
+        document.getElementById('digitTargetInstruction').innerText = "👉 Tunjukkan JARI JAWABANMU:";
+      }
+
+      document.getElementById('mathModal').classList.remove('hidden');
+      document.getElementById('gameModeBadge').innerText = "Mode: Jawab Gestur";
+      document.getElementById('robotDialogue').innerHTML = `"Tunjukkan jarimu di kamera lalu tahan 1 detik untuk mengunci jawaban!"`;
+
+      setTimeout(speakCurrentQuestion, 300);
+    }
+
+    function handleDirectInput(num) {
+      processDigitInput(num);
+    }
+
+    function processDigitInput(num) {
+      const activeBox = (inputStage === 'tens') ? document.getElementById('tensBox') : document.getElementById('onesBox');
+      const targetExpected = (inputStage === 'tens') ? targetTens : targetOnes;
+
+      activeBox.innerText = num;
+      activeBox.classList.remove('animate-pulse');
+
+      if (num === targetExpected) {
+        playSfx('correct');
+        activeBox.className = "w-14 h-16 bg-emerald-50 border-4 border-emerald-500 rounded-2xl flex items-center justify-center text-3xl font-black text-emerald-600 shadow-md";
+        document.getElementById('feedbackText').innerText = '';
+
+        if (inputStage === 'tens') {
+          inputStage = 'ones';
+          const onesBox = document.getElementById('onesBox');
+          onesBox.innerText = '?';
+          onesBox.className = "w-14 h-16 bg-yellow-50 border-4 border-yellow-400 rounded-2xl flex items-center justify-center text-3xl font-black text-yellow-600 animate-pulse shadow-md";
+          document.getElementById('digitTargetInstruction').innerText = "👉 Keren! Sekarang digit SATUAN:";
+        } else {
+          combo++;
+          updateComboUI();
+          const bonus = (combo > 1) ? 10 * combo : 10;
+          score += bonus;
+          document.getElementById('scoreVal').innerText = score;
+
+          document.getElementById('feedbackText').innerText = `🎉 BENAR! +${bonus} Bintang! (Combo x${combo})`;
+
+          setTimeout(() => {
+            document.getElementById('mathModal').classList.add('hidden');
+            isMathModalOpen = false;
+            document.getElementById('gameModeBadge').innerText = "Mode: 30 Kardus Misterius";
+            document.getElementById('robotDialogue').innerHTML = `"Luar biasa! Pilih dan buka paket kardus berikutnya!"`;
+          }, 1200);
+        }
+      } else {
+        combo = 0;
+        updateComboUI();
+        playSfx('wrong');
+        activeBox.className = "w-14 h-16 bg-red-50 border-4 border-red-500 rounded-2xl flex items-center justify-center text-3xl font-black text-red-600 shadow-md animate-shake";
+        document.getElementById('feedbackText').innerText = `Tadi terbaca angka ${num}, masih keliru! Ubah jarimu dan coba lagi!`;
+      }
+    }
+
+    // --- MediaPipe Hand Tracking (2 Tangan & Edge Scroll) ---
+    let camera = null;
+    let hands = null;
+    let isPinched = false;
+
+    let currentStableNumber = null;
+    let gestureHoldStartTime = 0;
+    const HOLD_REQUIRED_MS = 1000;
+
+    function handleTouchlessEdgeScroll(screenY) {
+      if (isMathModalOpen) return;
+
+      const topZone = window.innerHeight * 0.15;
+      const bottomZone = window.innerHeight * 0.85;
+      const topInd = document.getElementById('scrollTopIndicator');
+      const botInd = document.getElementById('scrollBottomIndicator');
+
+      if (screenY < topZone) {
+        window.scrollBy({ top: -14, behavior: 'auto' });
+        topInd.style.opacity = '1';
+        botInd.style.opacity = '0';
+      } else if (screenY > bottomZone) {
+        window.scrollBy({ top: 14, behavior: 'auto' });
+        botInd.style.opacity = '1';
+        topInd.style.opacity = '0';
+      } else {
+        topInd.style.opacity = '0';
+        botInd.style.opacity = '0';
+      }
+    }
+
+    function startAutoCamera() {
+      const videoElement = document.getElementById('webcam');
+      
+      hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+
+      hands.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.65,
+        minTrackingConfidence: 0.65
+      });
+
+      hands.onResults(onHandResults);
+
+      camera = new Camera(videoElement, {
+        onFrame: async () => {
+          await hands.send({ image: videoElement });
+        },
+        width: 320,
+        height: 240
+      });
+
+      camera.start().then(() => {
+        document.getElementById('gestureStatus').innerText = "Kamera Siap!";
+      }).catch(err => {
+        console.error(err);
+        document.getElementById('gestureStatus').innerText = "Izin Kamera Gagal";
+      });
+    }
+
+    function countFingersForOneHand(landmarks) {
+      let count = 0;
+      if (landmarks[8].y < landmarks[6].y) count++;
+      if (landmarks[12].y < landmarks[10].y) count++;
+      if (landmarks[16].y < landmarks[14].y) count++;
+      if (landmarks[20].y < landmarks[18].y) count++;
+
+      const dxThumb = Math.abs(landmarks[4].x - landmarks[2].x);
+      const distThumbToIndex = Math.hypot(landmarks[4].x - landmarks[5].x, landmarks[4].y - landmarks[5].y);
+      if (dxThumb > 0.055 && distThumbToIndex > 0.07) {
+        count++;
+      }
+      return count;
+    }
+
+    function onHandResults(results) {
+      const crosshair = document.getElementById('crosshair');
+      const gestureStatus = document.getElementById('gestureStatus');
+      const detectedCountSpan = document.getElementById('detectedFingersCount');
+      const handsBadge = document.getElementById('handsDetectedBadge');
+
+      const handsCount = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
+      handsBadge.innerText = `${handsCount} Tangan`;
+
+      if (handsCount > 0) {
+        let totalFingers = 0;
+        for (let i = 0; i < handsCount; i++) {
+          totalFingers += countFingersForOneHand(results.multiHandLandmarks[i]);
+        }
+        detectedCountSpan.innerText = totalFingers;
+
+        const mainHand = results.multiHandLandmarks[0];
+        const indexTip = mainHand[8];
+        const thumbTip = mainHand[4];
+
+        const screenX = (1 - indexTip.x) * window.innerWidth;
+        const screenY = indexTip.y * window.innerHeight;
+
+        crosshair.style.left = `${screenX}px`;
+        crosshair.style.top = `${screenY}px`;
+
+        handleTouchlessEdgeScroll(screenY);
+
+        const dx = thumbTip.x - indexTip.x;
+        const dy = thumbTip.y - indexTip.y;
+        const pinchDist = Math.sqrt(dx * dx + dy * dy);
+
+        if (pinchDist < 0.075) {
+          if (!isPinched) {
+            isPinched = true;
+            crosshair.classList.add('pinched');
+            gestureStatus.innerText = "💥 CUBIT (KLIK!)";
+            executePinchClick(screenX, screenY);
+          }
+        } else {
+          if (isPinched) {
+            isPinched = false;
+            crosshair.classList.remove('pinched');
+            gestureStatus.innerText = isMathModalOpen ? `Menunjukkan ${totalFingers} Jari` : "Membidik Kardus...";
+          }
+        }
+
+        if (isMathModalOpen && !isPinched) {
+          gestureStatus.innerText = `Terdeteksi: ${totalFingers} Jari`;
+
+          if (currentStableNumber === totalFingers) {
+            const elapsed = Date.now() - gestureHoldStartTime;
+            const progress = Math.min(100, Math.floor((elapsed / HOLD_REQUIRED_MS) * 100));
+
+            document.getElementById('holdProgressBar').style.width = `${progress}%`;
+            document.getElementById('holdTimerBadge').innerText = `Tahan Jari: ${progress}%`;
+
+            if (elapsed >= HOLD_REQUIRED_MS) {
+              processDigitInput(totalFingers);
+              currentStableNumber = null;
+              gestureHoldStartTime = Date.now() + 600;
+              document.getElementById('holdProgressBar').style.width = '0%';
+            }
+          } else {
+            currentStableNumber = totalFingers;
+            gestureHoldStartTime = Date.now();
+            document.getElementById('holdProgressBar').style.width = '0%';
+          }
+        }
+      } else {
+        gestureStatus.innerText = "Tangan Tidak Terlihat";
+        detectedCountSpan.innerText = "0";
+      }
+    }
+
+    function executePinchClick(x, y) {
+      crosshair.style.display = 'none';
+      const targetElem = document.elementFromPoint(x, y);
+      crosshair.style.display = 'flex';
+
+      if (targetElem) {
+        const boxItem = targetElem.closest('.box-item');
+        if (boxItem && !isMathModalOpen) {
+          const id = parseInt(boxItem.id.replace('box-item-', ''));
+          selectBox(id);
+          return;
+        }
+
+        const clickable = targetElem.closest('button, .interactive-btn');
+        if (clickable) {
+          clickable.click();
+        }
+      }
+    }
+
+    initBoxes();
+    window.addEventListener('DOMContentLoaded', () => {
+      startAutoCamera();
+    });
+  </script>
+</body>
+</html>
